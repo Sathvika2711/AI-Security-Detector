@@ -1,4 +1,4 @@
-name: Run Security Detector Tests
+name: CI
 
 on:
   push:
@@ -6,8 +6,11 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  test-and-scan:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,12 +21,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest flask langchain langchain-anthropic python-dotenv
+          pip install -r requirements-dev.txt
 
-      - name: Run tests
-        run: |
-          pytest tests/test_detector.py tests/test_audit_log.py -v
+      - name: Unit tests
+        run: pytest -v
+
+      - name: Static security scan (Bandit)
+        run: bandit -r . -x ./tests -ll
+
+      - name: Detection-quality gate (rules layer, no API key needed)
+        # Fails the build if a rule change makes detection worse.
+        run: python eval/run_eval.py --mode rules --no-write --min-recall 0.38 --max-fpr 0.30
+
+      - name: Dependency vulnerability audit (pip-audit)
+        # Non-blocking: advisories in transitive deps are reported, not fatal.
+        continue-on-error: true
+        run: pip-audit -r requirements.txt
