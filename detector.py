@@ -45,7 +45,12 @@ from telemetry import Timer, empty_usage, get_logger, token_cost_usd
 log = get_logger("detector")
 
 # ── CONFIG ────────────────────────────────────────────────────
-MODEL_NAME = os.environ.get("DETECTOR_MODEL", "claude-haiku-4-5")
+# LLM_PROVIDER selects where Claude is called from:
+#   anthropic  Anthropic API directly (needs ANTHROPIC_API_KEY)
+#   bedrock    Amazon Bedrock (uses the AWS credentials / Lambda IAM role)
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic")
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "au.anthropic.claude-haiku-4-5-20251001-v1:0")
+MODEL_NAME = BEDROCK_MODEL_ID if LLM_PROVIDER == "bedrock" else os.environ.get("DETECTOR_MODEL", "claude-haiku-4-5")
 DEFAULT_MODE = os.environ.get("DETECTOR_MODE", "hybrid")
 MODES = ("rules", "llm", "hybrid")
 
@@ -285,23 +290,38 @@ _llm_lock = threading.Lock()
 
 
 def get_llm():
-    """Lazily create one shared ChatAnthropic client (not one per request)."""
+    """Lazily create one shared chat-model client (not one per request)."""
     global _llm
     with _llm_lock:
         if _llm is None:
-            from langchain_anthropic import ChatAnthropic
-
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                raise ValueError("ANTHROPIC_API_KEY not set")
-            _llm = ChatAnthropic(
-                model=MODEL_NAME,
-                anthropic_api_key=api_key,
-                max_tokens=300,
-                timeout=20,
-                max_retries=2,
-            )
+            _llm = _build_llm()
     return _llm
+
+
+def _build_llm():
+    if LLM_PROVIDER == "bedrock":
+        from langchain_aws import ChatBedrockConverse
+
+        # No API key: boto3 picks up credentials from the environment, the
+        # AWS CLI profile, or (in Lambda) the function's IAM role.
+        return ChatBedrockConverse(
+            model_id=BEDROCK_MODEL_ID,
+            region_name=os.environ.get("AWS_REGION", "ap-southeast-2"),
+            max_tokens=300,
+        )
+
+    from langchain_anthropic import ChatAnthropic
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY not set")
+    return ChatAnthropic(
+        model=MODEL_NAME,
+        anthropic_api_key=api_key,
+        max_tokens=300,
+        timeout=20,
+        max_retries=2,
+    )
 
 
 def _call_llm(llm, text: str, rule_hint: str):

@@ -78,7 +78,7 @@ class JsonFormatter(logging.Formatter):
 def get_logger(name: str = "detector") -> logging.Logger:
     logger = logging.getLogger(name)
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(sys.stderr)  # stdout is reserved for MCP stdio
         handler.setFormatter(JsonFormatter())
         logger.addHandler(handler)
         logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
@@ -89,3 +89,32 @@ def get_logger(name: str = "detector") -> logging.Logger:
 def log_event(logger: logging.Logger, msg: str, **fields):
     """Log a structured event: log_event(log, "analysed", risk="high", ms=12.3)"""
     logger.info(msg, extra={"fields": fields})
+
+
+# ── CLOUDWATCH EMBEDDED METRIC FORMAT (EMF) ───────────────────
+# In Lambda, printing one JSON line in EMF format to stdout makes
+# CloudWatch create real metrics from it — no API calls, no extra cost
+# per PutMetricData, and the log line doubles as a structured log.
+
+METRIC_NAMESPACE = os.environ.get("METRIC_NAMESPACE", "AIGuardrail")
+
+
+def emf_record(metrics: dict, units: dict, dimensions: dict, properties: dict = None) -> dict:
+    """Build an EMF document. metrics={"LatencyMs": 12.3}, units={"LatencyMs": "Milliseconds"}."""
+    return {
+        "_aws": {
+            "Timestamp": int(time.time() * 1000),
+            "CloudWatchMetrics": [{
+                "Namespace": METRIC_NAMESPACE,
+                "Dimensions": [list(dimensions.keys())],
+                "Metrics": [{"Name": k, "Unit": units.get(k, "None")} for k in metrics],
+            }],
+        },
+        **dimensions,
+        **metrics,
+        **(properties or {}),
+    }
+
+
+def emit_emf(metrics: dict, units: dict, dimensions: dict, properties: dict = None):
+    print(json.dumps(emf_record(metrics, units, dimensions, properties), default=str), flush=True)

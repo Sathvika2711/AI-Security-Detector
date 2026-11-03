@@ -1,0 +1,10 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/infra.ts",
+  "watch": { "include": ["**"], "exclude": ["README.md", "cdk*.json", "**/*.d.ts", "**/*.js", "tsconfig.json", "package*.json", "node_modules", "test"] },
+  "context": {
+    "region": "ap-southeast-2",
+    "bedrockModelId": "au.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "cognitoDomainPrefix": "ai-guardrail-sathvika2711",
+    "frontendUrls": "http://localhost:3000"
+  }
+}

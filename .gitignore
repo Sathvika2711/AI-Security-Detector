@@ -5,3 +5,10 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+build/
+node_modules/
+cdk.out/
+.next/
+out/
+*.tsbuildinfo
+.env.local

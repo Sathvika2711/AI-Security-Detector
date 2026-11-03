@@ -31,3 +31,22 @@
 - **"How do you control cost?"** "Strong rules block with no LLM call, there's a cache, I track tokens and cost per request, and `/metrics` shows the LLM offload rate."
 - **"Can your detector be attacked?"** "Yes. The input is fenced as untrusted data, output is schema-validated, it fails closed, and long inputs are chunked to close a truncation bypass I found in my v1."
 - **"What would you do next?"** "Move it to Bedrock on Lambda + API Gateway, rebuild the flow in LangGraph, expose it as an MCP tool, and benchmark on a public dataset."
+
+---
+
+# v3: LangGraph, MCP, AWS serverless, Next.js
+
+| Area | Added |
+|---|---|
+| **LangGraph** | `graph.py`: the pipeline as a StateGraph (screen → rules → block / cache → classify → finalise / fail_closed). Parity-tested against v2 on all 138 examples × 3 modes |
+| **Bedrock** | `LLM_PROVIDER=bedrock` uses `ChatBedrockConverse` with IAM credentials, so no API key is needed |
+| **MCP** | `mcp_server.py`: read-only tools `scan_prompt` and `list_detection_rules`, tested over real stdio with an MCP client |
+| **Lambda** | `lambda_handler.py`: API Gateway v2 routes, input validation, admin-only `/audit` via `cognito:groups`, no error leakage |
+| **DynamoDB** | `dynamo_store.py`: single table, day-sharded keys, newest-first queries without scans, 90-day TTL, hash-only storage for clean inputs |
+| **Observability** | CloudWatch EMF metrics (Requests, Blocked, HighRisk, LLMCalls, CacheHits, CostUSD, LatencyMs), dashboard, Lambda error alarm |
+| **Infrastructure** | `infra/`: AWS CDK in TypeScript (Cognito with PKCE, HTTP API with JWT authorizer + throttling, least-privilege Bedrock IAM) plus 7 Jest security tests |
+| **Dashboard** | `web/`: Next.js + TypeScript, OIDC login, Scan / Metrics / Audit views, static export for Amplify |
+| **CI/CD** | Three CI jobs (Python, CDK, web) and a manual GitHub → AWS deploy using OIDC (no stored keys) |
+| **Packaging** | `scripts/build_lambda.py` builds the Linux bundle from Windows without Docker (121 MB, under the 250 MB limit) |
+| **Fixes** | JSON logs moved to stderr (stdout is reserved for MCP stdio); eval no longer demands an Anthropic key when using Bedrock; `--engine graph` flag |
+| **Tests** | 70 → 108 Python tests, plus 7 infrastructure tests |

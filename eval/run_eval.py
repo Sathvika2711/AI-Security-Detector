@@ -127,10 +127,13 @@ def compute_metrics(rows):
 
 # ── RUN ───────────────────────────────────────────────────────
 
-def run(examples, mode, verbose=False):
+def run(examples, mode, verbose=False, engine="classic"):
+    analyse = analyse_input
+    if engine == "graph":
+        from graph import analyse_input_graph as analyse
     rows = []
     for i, ex in enumerate(examples, 1):
-        result = analyse_input(ex["text"], mode=mode, use_cache=False)
+        result = analyse(ex["text"], mode=mode, use_cache=False)
         rows.append({**ex, "flagged": is_flagged(result), "risk_level": result["risk_level"],
                      "method": result["method"], "reasoning": result["reasoning"],
                      "usage": result["usage"]})
@@ -200,6 +203,8 @@ def summary_table(all_metrics):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mode", default="rules", choices=MODES + ("all",))
+    p.add_argument("--engine", default="classic", choices=("classic", "graph"),
+                   help="classic = detector.analyse_input, graph = LangGraph pipeline")
     p.add_argument("--dataset", default=str(DEFAULT_DATASET))
     p.add_argument("--hf", help="Hugging Face dataset name, e.g. deepset/prompt-injections")
     p.add_argument("--split", default="test")
@@ -219,18 +224,22 @@ def main(argv=None):
         examples = examples[:args.limit]
 
     modes = list(MODES) if args.mode == "all" else [args.mode]
-    if any(m != "rules" for m in modes) and not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("ANTHROPIC_API_KEY is not set — only --mode rules can run without it.")
+    needs_key = os.environ.get("LLM_PROVIDER", "anthropic") == "anthropic"
+    if any(m != "rules" for m in modes) and needs_key and not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.exit("ANTHROPIC_API_KEY is not set — only --mode rules can run without it "
+                 "(or set LLM_PROVIDER=bedrock to use AWS credentials).")
 
     all_metrics, failed = {}, False
     for mode in modes:
         print(f"Evaluating mode={mode} on {len(examples)} examples...", file=sys.stderr)
-        rows, metrics = run(examples, mode, args.verbose)
+        rows, metrics = run(examples, mode, args.verbose, args.engine)
         all_metrics[mode] = metrics
 
         if not args.no_write:
             RESULTS_DIR.mkdir(parents=True, exist_ok=True)
             stem = f"{mode}" + (f"_{args.hf.replace('/', '_')}" if args.hf else "")
+            if args.engine == "graph":
+                stem += "_graph"
             (RESULTS_DIR / f"{stem}.md").write_text(to_markdown(mode, metrics, rows, dataset_name), encoding="utf-8")
             (RESULTS_DIR / f"{stem}.json").write_text(json.dumps(
                 {k: v for k, v in metrics.items()}, indent=2), encoding="utf-8")

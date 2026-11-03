@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, v3 ]
   pull_request:
     branches: [ main, master ]
 
@@ -10,35 +10,72 @@ permissions:
   contents: read
 
 jobs:
-  test-and-scan:
+  python:
+    name: Python — tests, SAST, eval gate
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-
-      - name: Unit tests
+      - name: Unit, graph-parity, MCP and AWS (moto) tests
         run: pytest -v
-
       - name: Static security scan (Bandit)
-        run: bandit -r . -x ./tests -ll
-
+        run: bandit -r . -x ./tests,./build,./infra,./web -ll
       - name: Detection-quality gate (rules layer, no API key needed)
-        # Fails the build if a rule change makes detection worse.
-        run: python eval/run_eval.py --mode rules --no-write --min-recall 0.38 --max-fpr 0.30
-
+        run: python eval/run_eval.py --mode rules --engine graph --no-write --min-recall 0.38 --max-fpr 0.30
       - name: Dependency vulnerability audit (pip-audit)
-        # Non-blocking: advisories in transitive deps are reported, not fatal.
         continue-on-error: true
         run: pip-audit -r requirements.txt
+
+  infra:
+    name: Infrastructure — CDK tests and synth
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npx tsc
+      - name: Infrastructure security tests (least privilege, JWT on routes, throttling…)
+        run: npx jest
+      - name: Build Lambda bundle
+        run: python ../scripts/build_lambda.py
+      - name: Synthesise CloudFormation
+        run: npx cdk synth --quiet
+        env:
+          CDK_DEFAULT_ACCOUNT: '123456789012'
+
+  web:
+    name: Dashboard — type-check and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx next build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
