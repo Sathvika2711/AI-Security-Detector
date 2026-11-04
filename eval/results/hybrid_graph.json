@@ -1,0 +1,89 @@
+{
+  "n": 138,
+  "tp": 78,
+  "fp": 3,
+  "tn": 57,
+  "fn": 0,
+  "high_risk_precision": 0.974,
+  "high_risk_count": 77,
+  "precision": 0.963,
+  "recall": 1.0,
+  "f1": 0.9812,
+  "fpr": 0.05,
+  "accuracy": 0.9783,
+  "per_category": {
+    "benign": {
+      "label": 0,
+      "n": 30,
+      "correct": 30,
+      "rate": 1.0
+    },
+    "benign_hard": {
+      "label": 0,
+      "n": 30,
+      "correct": 27,
+      "rate": 0.9
+    },
+    "instruction_override": {
+      "label": 1,
+      "n": 12,
+      "correct": 12,
+      "rate": 1.0
+    },
+    "jailbreak": {
+      "label": 1,
+      "n": 12,
+      "correct": 12,
+      "rate": 1.0
+    },
+    "role_hijack": {
+      "label": 1,
+      "n": 8,
+      "correct": 8,
+      "rate": 1.0
+    },
+    "system_prompt_extraction": {
+      "label": 1,
+      "n": 10,
+      "correct": 10,
+      "rate": 1.0
+    },
+    "indirect_injection": {
+      "label": 1,
+      "n": 10,
+      "correct": 10,
+      "rate": 1.0
+    },
+    "encoding_attack": {
+      "label": 1,
+      "n": 6,
+      "correct": 6,
+      "rate": 1.0
+    },
+    "obfuscated": {
+      "label": 1,
+      "n": 8,
+      "correct": 8,
+      "rate": 1.0
+    },
+    "social_engineering": {
+      "label": 1,
+      "n": 6,
+      "correct": 6,
+      "rate": 1.0
+    },
+    "code_injection": {
+      "label": 1,
+      "n": 6,
+      "correct": 6,
+      "rate": 1.0
+    }
+  },
+  "llm_calls": 115,
+  "requests_without_llm_pct": 16.7,
+  "total_cost_usd": 0.098388,
+  "cost_per_1k_requests_usd": 0.713,
+  "latency_avg_ms": 710.5,
+  "latency_p95_ms": 1082.27,
+  "llm_errors": 0
+}
