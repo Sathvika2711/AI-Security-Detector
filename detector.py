@@ -40,7 +40,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from telemetry import Timer, empty_usage, get_logger, token_cost_usd
+from telemetry import Timer, empty_usage, get_logger, safe_error_detail, token_cost_usd
 
 log = get_logger("detector")
 
@@ -304,10 +304,16 @@ def _build_llm():
 
         # No API key: boto3 picks up credentials from the environment, the
         # AWS CLI profile, or (in Lambda) the function's IAM role.
+        from botocore.config import Config
+
         return ChatBedrockConverse(
             model_id=BEDROCK_MODEL_ID,
             region_name=os.environ.get("AWS_REGION", "ap-southeast-2"),
             max_tokens=300,
+            # Adaptive retries back off on ThrottlingException — new accounts
+            # have low Bedrock quotas. Timeouts keep Lambda from hanging.
+            config=Config(retries={"max_attempts": 4, "mode": "adaptive"},
+                          connect_timeout=5, read_timeout=20),
         )
 
     from langchain_anthropic import ChatAnthropic
@@ -324,25 +330,42 @@ def _build_llm():
     )
 
 
+class LLMCallError(Exception):
+    """The model could not be reached or refused the request (auth, quota, network...)."""
+
+
+class LLMOutputError(Exception):
+    """The model answered, but not with a valid assessment."""
+
+
+def _err_name(exc: BaseException) -> str:
+    return type(exc.__cause__ or exc).__name__
+
+
 def _call_llm(llm, text: str, rule_hint: str):
-    """One LLM classification. Returns (assessment_dict, input_tokens, output_tokens)."""
+    """One LLM classification. Returns (assessment_dict, input_tokens, output_tokens).
+
+    Raises LLMCallError if the model can't be called, LLMOutputError if its
+    reply isn't a valid assessment — so logs say which one actually happened.
+    """
     from langchain_core.messages import HumanMessage, SystemMessage
 
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(
-            content=USER_TEMPLATE.format(rule_hint=rule_hint, user_input=_fence(text))
-        ),
+        HumanMessage(content=USER_TEMPLATE.format(rule_hint=rule_hint, user_input=_fence(text))),
     ]
-    response = llm.invoke(messages)
+    try:
+        response = llm.invoke(messages)
+    except Exception as e:
+        raise LLMCallError(safe_error_detail(e)) from e
+
     usage = getattr(response, "usage_metadata", None) or {}
-    data = _extract_json(str(response.content))
-    assessment = Assessment(**data).consistent()
-    return (
-        assessment,
-        int(usage.get("input_tokens", 0)),
-        int(usage.get("output_tokens", 0)),
-    )
+    try:
+        data = _extract_json(str(response.content))
+        assessment = Assessment(**data).consistent()
+    except (ValidationError, ValueError, json.JSONDecodeError) as e:
+        raise LLMOutputError(safe_error_detail(e)) from e
+    return assessment, int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
 
 
 # ── CACHE ─────────────────────────────────────────────────────
@@ -524,13 +547,11 @@ def _analyse(user_input, mode, llm, use_cache):
                 > RISK_ORDER[worst["risk_level"]]
             ):
                 worst = assessment
-    except (ValidationError, ValueError, json.JSONDecodeError) as e:
-        log.warning("llm_output_invalid", extra={"fields": {"error": type(e).__name__}})
-        return _fail_closed(
-            rules, "llm_parse_fallback", "LLM returned an invalid assessment."
-        )
-    except Exception as e:  # network, auth, rate limit, timeout...
-        log.error("llm_call_failed", extra={"fields": {"error": type(e).__name__}})
+    except LLMOutputError as e:
+        log.warning("llm_output_invalid", extra={"fields": {"error": _err_name(e), "detail": str(e)}})
+        return _fail_closed(rules, "llm_parse_fallback", "LLM returned an invalid assessment.")
+    except Exception as e:  # client setup, auth, quota, throttling, network, timeout...
+        log.error("llm_call_failed", extra={"fields": {"error": _err_name(e), "detail": safe_error_detail(e.__cause__ or e)}})
         return _fail_closed(rules, "error_fallback", "LLM analysis unavailable.")
 
     out = _result(

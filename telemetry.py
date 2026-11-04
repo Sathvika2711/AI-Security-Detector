@@ -13,6 +13,7 @@ Keeps the observability concerns out of the detection logic:
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -118,3 +119,22 @@ def emf_record(metrics: dict, units: dict, dimensions: dict, properties: dict = 
 
 def emit_emf(metrics: dict, units: dict, dimensions: dict, properties: dict = None):
     print(json.dumps(emf_record(metrics, units, dimensions, properties), default=str), flush=True)
+
+
+# ── SAFE ERROR DETAILS ────────────────────────────────────────
+# Error messages are what make incidents debuggable (e.g. Bedrock's
+# "Model use case details have not been submitted"), but they can echo
+# credentials. Redact anything key-like and cap the length before logging.
+
+_SECRET_PATTERNS = [
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]+"),                 # Anthropic API keys
+    re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b"),             # AWS access key IDs
+    re.compile(r"(?i)(secret|token|password|signature)(\W{1,3})[^\s,;]+"),
+]
+
+
+def safe_error_detail(exc: BaseException, limit: int = 300) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    for rx in _SECRET_PATTERNS:
+        text = rx.sub(lambda m: (m.group(1) + m.group(2) if m.lastindex and m.lastindex >= 2 else "") + "[REDACTED]", text)
+    return text[:limit]

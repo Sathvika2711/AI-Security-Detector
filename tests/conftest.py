@@ -9,7 +9,10 @@ sys.path.insert(0, ROOT)
 
 # Point the module-level DB at a throwaway file before anything imports app.py
 os.environ.setdefault("AUDIT_DB_PATH", os.path.join(tempfile.mkdtemp(), "import_time.db"))
-os.environ.pop("ANTHROPIC_API_KEY", None)
+# Tests must never call real services, whatever the developer's terminal has set
+# (e.g. LLM_PROVIDER=bedrock left over from running the eval).
+for _var in ("ANTHROPIC_API_KEY", "LLM_PROVIDER", "BEDROCK_MODEL_ID", "DETECTOR_MODE"):
+    os.environ.pop(_var, None)
 
 import pytest  # noqa: E402
 

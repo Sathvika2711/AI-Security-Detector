@@ -29,10 +29,9 @@ from typing import Optional, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
-from pydantic import ValidationError
 
 import detector as d
-from telemetry import Timer, empty_usage, get_logger, token_cost_usd
+from telemetry import Timer, empty_usage, get_logger, safe_error_detail, token_cost_usd
 
 log = get_logger("graph")
 
@@ -91,7 +90,6 @@ def cache(state: GuardState) -> GuardState:
 
 
 def classify(state: GuardState, config: RunnableConfig) -> GuardState:
-    llm = (config or {}).get("configurable", {}).get("llm") or d.get_llm()
     rule_hits = state.get("rules", [])
     hint = "Not used." if state["mode"] == "llm" else (
         "Matched: " + ", ".join(r.name for r in rule_hits) if rule_hits else "No patterns matched.")
@@ -99,16 +97,20 @@ def classify(state: GuardState, config: RunnableConfig) -> GuardState:
     tokens_in = tokens_out = calls = 0
     worst = None
     try:
+        # Client creation is inside the try: a credentials/config failure must
+        # fail closed like any other LLM failure, never crash the request.
+        llm = (config or {}).get("configurable", {}).get("llm") or d.get_llm()
         for chunk in d._chunks(state["text"]):
             assessment, i, o = d._call_llm(llm, chunk, hint)
             tokens_in, tokens_out, calls = tokens_in + i, tokens_out + o, calls + 1
             if worst is None or d.RISK_ORDER[assessment["risk_level"]] > d.RISK_ORDER[worst["risk_level"]]:
                 worst = assessment
-    except (ValidationError, ValueError, json.JSONDecodeError) as e:
-        log.warning("llm_output_invalid", extra={"fields": {"error": type(e).__name__}})
+    except d.LLMOutputError as e:
+        log.warning("llm_output_invalid", extra={"fields": {"error": d._err_name(e), "detail": str(e)}})
         return {"error": "parse"}
-    except Exception as e:  # network, auth, throttling, timeout...
-        log.error("llm_call_failed", extra={"fields": {"error": type(e).__name__}})
+    except Exception as e:  # client setup, auth, quota, throttling, network, timeout...
+        log.error("llm_call_failed", extra={"fields": {"error": d._err_name(e),
+                                                       "detail": safe_error_detail(e.__cause__ or e)}})
         return {"error": "call"}
 
     return {"worst": worst, "tokens_in": tokens_in, "tokens_out": tokens_out, "llm_calls": calls}

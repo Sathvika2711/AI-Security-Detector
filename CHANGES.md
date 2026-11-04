@@ -50,3 +50,19 @@
 | **Packaging** | `scripts/build_lambda.py` builds the Linux bundle from Windows without Docker (121 MB, under the 250 MB limit) |
 | **Fixes** | JSON logs moved to stderr (stdout is reserved for MCP stdio); eval no longer demands an Anthropic key when using Bedrock; `--engine graph` flag |
 | **Tests** | 70 → 108 Python tests, plus 7 infrastructure tests |
+
+---
+
+# v3.1: fixes from the first real AWS deployment
+
+| Found during deploy | Fix |
+|---|---|
+| A failure while *building* the Bedrock client (bad credentials, missing `botocore[crt]`) was raised **outside** the graph's error handling, so the request would crash instead of failing closed | Client creation moved inside the try, so every LLM failure now fails closed. A regression test fails if this is undone |
+| Client setup errors were logged as `llm_output_invalid`, sending debugging the wrong way | `LLMCallError` and `LLMOutputError` separate "couldn't reach the model" from "model answered badly" |
+| Logs held only the error **type** (`ResourceNotFoundException`), not the reason | Logs now include a **redacted** `detail` (API keys and AWS key IDs removed, capped at 300 characters), e.g. *"Model use case details have not been submitted"* |
+| New accounts have low Bedrock quotas | botocore **adaptive retries** (5 attempts) with connect and read timeouts |
+| `aws login` credentials need an extra package locally | `boto3[crt]` in `requirements.txt` |
+| Next.js pulled in a PostCSS version with advisories (build-time only) | npm `overrides` pins `postcss@^8.5.23`, so `npm audit` is clean |
+| DEPLOY.md assumed IAM Identity Center | Rewritten around an IAM admin user plus `aws login`, the Anthropic use-case form, and new troubleshooting rows |
+
+Tests: 108 → **119**.

@@ -1,89 +1,29 @@
 {
-  "n": 138,
-  "tp": 78,
-  "fp": 4,
-  "tn": 56,
+  "n": 5,
+  "tp": 0,
+  "fp": 5,
+  "tn": 0,
   "fn": 0,
-  "high_risk_precision": 0.9747,
-  "high_risk_count": 79,
-  "precision": 0.9512,
-  "recall": 1.0,
-  "f1": 0.975,
-  "fpr": 0.0667,
-  "accuracy": 0.971,
+  "high_risk_precision": 0.0,
+  "high_risk_count": 0,
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1": 0.0,
+  "fpr": 1.0,
+  "accuracy": 0.0,
   "per_category": {
     "benign": {
       "label": 0,
-      "n": 30,
-      "correct": 30,
-      "rate": 1.0
-    },
-    "benign_hard": {
-      "label": 0,
-      "n": 30,
-      "correct": 26,
-      "rate": 0.8667
-    },
-    "instruction_override": {
-      "label": 1,
-      "n": 12,
-      "correct": 12,
-      "rate": 1.0
-    },
-    "jailbreak": {
-      "label": 1,
-      "n": 12,
-      "correct": 12,
-      "rate": 1.0
-    },
-    "role_hijack": {
-      "label": 1,
-      "n": 8,
-      "correct": 8,
-      "rate": 1.0
-    },
-    "system_prompt_extraction": {
-      "label": 1,
-      "n": 10,
-      "correct": 10,
-      "rate": 1.0
-    },
-    "indirect_injection": {
-      "label": 1,
-      "n": 10,
-      "correct": 10,
-      "rate": 1.0
-    },
-    "encoding_attack": {
-      "label": 1,
-      "n": 6,
-      "correct": 6,
-      "rate": 1.0
-    },
-    "obfuscated": {
-      "label": 1,
-      "n": 8,
-      "correct": 8,
-      "rate": 1.0
-    },
-    "social_engineering": {
-      "label": 1,
-      "n": 6,
-      "correct": 6,
-      "rate": 1.0
-    },
-    "code_injection": {
-      "label": 1,
-      "n": 6,
-      "correct": 6,
-      "rate": 1.0
+      "n": 5,
+      "correct": 0,
+      "rate": 0.0
     }
   },
-  "llm_calls": 115,
-  "requests_without_llm_pct": 16.7,
-  "total_cost_usd": 0.098653,
-  "cost_per_1k_requests_usd": 0.7149,
-  "latency_avg_ms": 1116.44,
-  "latency_p95_ms": 1488.42,
-  "llm_errors": 0
+  "llm_calls": 0,
+  "requests_without_llm_pct": 100.0,
+  "total_cost_usd": 0.0,
+  "cost_per_1k_requests_usd": 0.0,
+  "latency_avg_ms": 143.47,
+  "latency_p95_ms": 714.92,
+  "llm_errors": 5
 }

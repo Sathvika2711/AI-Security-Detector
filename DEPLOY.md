@@ -20,44 +20,42 @@ Close and reopen VS Code after installing, so the terminal picks them up.
 
 ## 1. Create and secure the AWS account
 
-1. Create an account at **aws.amazon.com** (needs a card, which is only charged for usage beyond the free tier).
-2. Turn on **MFA for the root user**: account menu (top right) → **Security credentials** → **Assign MFA device**.
-3. Set up a **budget alarm**: search **Billing and Cost Management** → **Budgets** → **Create budget** → *Monthly cost budget* → **$10** → your email.
-4. Create a day-to-day admin login, so you don't use the root user:
-   - Search **IAM Identity Center** → **Enable** (choose region **Asia Pacific (Sydney)**).
-   - **Users** → **Add user** → your email → finish the email invite and set a password plus MFA.
-   - **AWS accounts** → tick your account → **Assign users or groups** → your user → **Create permission set** → *Predefined* → **AdministratorAccess** → finish.
-   - Copy the **AWS access portal URL** from the Identity Center **Dashboard** (it looks like `https://d-xxxxxxxxxx.awsapps.com/start`).
-5. Connect the CLI:
+1. **Use your existing AWS account if you have one.** If the sign-up page says *"Multi-session is not supported"* or *"You can't use your Builder ID to access existing accounts"*, you already have an account. Choose **Sign into an existing AWS account** and sign in as **Root user**. A Builder ID (used for Skill Builder) is **not** an AWS account.
+   - No account yet? Create one at **aws.amazon.com**. The Free plan gives you credits and can't overcharge you.
+2. Turn on **MFA for the root user**: account menu (top right) → **Security credentials** → **Assign MFA device** → **Authenticator app**.
+3. Set a **budget alarm**: **Billing and Cost Management** → **Budgets** → **Create budget** → *Monthly cost budget* → **$10** → your email.
+4. Create an **everyday admin user**, so you don't work as root:
+   - **IAM** → **Users** → **Create user** → name `sathvika-admin` (names can't be changed later, so check the spelling).
+   - Tick **Provide user access to the AWS Management Console** → **Custom password** → *untick* "must create a new password".
+   - **Attach policies directly** → tick **AdministratorAccess** (the "AWS managed – job function" one).
+   - Create the user, save the **Console sign-in URL**, then open the user → **Security credentials** → **Assign MFA device**.
+   - **Don't create access keys.** `aws login` (next step) gives the CLI short-lived credentials instead.
+5. Connect the CLI (AWS CLI 2.32 or newer):
    ```powershell
-   aws configure sso
+   pip install "botocore[crt]"      # Python needs this to read `aws login` credentials
+   aws login                        # sign in as the IAM user, region ap-southeast-2
+   aws sts get-caller-identity      # Arn must end in user/sathvika-admin, not root
    ```
-   Give it the portal URL and region `ap-southeast-2`, approve in the browser, pick the account and AdministratorAccess, and call the profile **`guardrail`**.
-6. Use that profile in this terminal:
-   ```powershell
-   $env:AWS_PROFILE = "guardrail"
-   aws sts get-caller-identity
-   ```
-   You should see your account ID. When the session expires (after a few hours), run `aws sso login`.
-
----
+   - If it says *"Profile 'default' is already configured with Access Key credentials"*, you have old keys saved. Run `aws sts get-caller-identity`: if it shows `InvalidClientTokenId` they're dead, so delete the `[default]` block in `%USERPROFILE%\.aws\credentials`. If they're live, also delete them in IAM.
+   - If it logs you in as **root**, that's because the browser was signed in as root. Add an IAM-user session in the console (top-right menu → **Add session**), run `aws login` again, and pick that session (answer **y** to overwrite).
+   - Sessions expire after a few hours. Just run `aws login` again.
 
 ## 2. Turn on Claude in Amazon Bedrock
 
-1. Switch the console region (top right) to **Asia Pacific (Sydney) ap-southeast-2**.
-2. Search **Amazon Bedrock**.
-   - If there's a **Model access** page in the left menu, request access to **Anthropic → Claude Haiku 4.5**. The first time, Anthropic asks for a short use-case form ("portfolio project: prompt-injection detection").
-   - If there's no Model access page, models are enabled automatically on first use.
-3. Find the model ID to call: **Bedrock → Cross-region inference** (or **Inference profiles**) → find **Claude Haiku 4.5** → copy its **Inference profile ID**, e.g. `au.anthropic.claude-haiku-4-5-20251001-v1:0`.
-4. Test it from your repo with the existing eval:
+1. Console region (top right): **Asia Pacific (Sydney) ap-southeast-2**.
+2. **Amazon Bedrock** → **Model catalog** → **Claude Haiku 4.5** → **Submit use case details** (a one-time form Anthropic requires per account). Suggested answers: company *Personal project*, website your GitHub, intended users *Internal*, use case *"Portfolio project: a security guardrail that screens text for prompt injection before it reaches an AI application. Low-volume testing only."* Access starts within about 15 minutes.
+3. Get the model ID from the CLI:
+   ```powershell
+   aws bedrock list-inference-profiles --region ap-southeast-2 --query "inferenceProfileSummaries[?contains(inferenceProfileId,'haiku-4-5')].inferenceProfileId" --output text
+   ```
+   Use the **`au.`** one (requests stay in Australian regions). Skip `global.`, which can route anywhere.
+4. Test it:
    ```powershell
    $env:LLM_PROVIDER = "bedrock"
-   $env:BEDROCK_MODEL_ID = "PASTE-THE-ID"
-   python eval/run_eval.py --mode hybrid --limit 5
+   $env:BEDROCK_MODEL_ID = "au.anthropic.claude-haiku-4-5-20251001-v1:0"
+   python -c "import detector; print(detector._build_llm().invoke('Say hi').content)"
    ```
-   It works if a table prints with no `llm_call_failed` lines. If you get `AccessDeniedException`, model access isn't approved yet; wait a few minutes. A `ValidationException` means the model ID is wrong.
-
----
+   A greeting means it works. For errors, see **Troubleshooting** at the end.
 
 ## 3. Configure and deploy the backend
 
@@ -185,10 +183,14 @@ Then delete the Amplify app in the console if you created one.
 
 | Problem | Fix |
 |---|---|
-| `AccessDeniedException` calling Bedrock | Model access not approved yet, or the wrong region (must be Sydney) |
-| `ValidationException ... model identifier is invalid` | Copy the exact inference profile ID from Bedrock → Cross-region inference |
+| `ResourceNotFoundException: Model use case details have not been submitted` | Submit the Anthropic form (Step 2.2) and wait 15 minutes |
+| `AccessDeniedException: Your account is currently being verified` | New-account checks. Wait up to 2 hours; CloudFormation and CDK work meanwhile, so you can deploy anyway |
+| `Missing Dependency: ... pip install "botocore[crt]"` | `pip install "botocore[crt]"`, which `aws login` credentials need |
+| `ValidationException ... model identifier is invalid` | Use the exact `au.` ID from Step 2.3 (not a placeholder) |
+| `AccessDeniedException` on the model after the form | Wrong region (must be Sydney), or IAM is missing `bedrock:InvokeModel` |
+| Dashboard scans say **"LLM analysis unavailable"** | Bedrock is refusing calls, and the guardrail is correctly failing closed. Find the reason with `aws logs tail <log-group> --since 15m --filter-pattern llm_call_failed` (the `detail` field has the message) |
 | `cdk deploy` says the domain prefix exists | Pick another `cognitoDomainPrefix` |
 | Browser console shows a **CORS** error | The page's URL isn't in `frontendUrls`. Add it and run `npx cdk deploy` |
 | Cognito shows `redirect_mismatch` | Same fix: the URL must be in `frontendUrls` |
-| `ExpiredToken` / `The SSO session has expired` | `aws sso login` |
+| `ExpiredToken` / session expired | `aws login` |
 | `This stack uses assets... run cdk bootstrap` | `npx cdk bootstrap` |
